@@ -1,0 +1,102 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "summary": "三个原始问题均已解决（session 取舍显式声明、用户交互全自动、错误处理完备）。但发现 2 个新问题：① 主进程「逐条评估」与「子进程独立」存在结构性矛盾 — 同一 session 裁判所有轮次，独立性承诺落空（high）；② 收敛判据假设子进程质量稳定，但 plan 自身错误处理已承认子进程可能失败，存在早停风险（medium）。建议补充 evaluator 多样性或降级为 advisory label 后再实施。",
+  "criticalIssues": [
+    {
+      "file": "/home/dou/.claude/plans/skill-reveiw-cc-cli-github-skills-skill-quiet-graham.md",
+      "line": 70,
+      "severity": "high",
+      "desc": "主进程「逐条评估」与「子进程独立性」矛盾。plan 第 24-27 行宣称 loop 模式每轮新建子进程以保证独立性，但第 70-73 行让主进程（同一个 Claude session）逐条裁判所有轮次的所有发现。这意味着：若主进程对某类问题有盲区，该类真实问题会在每一轮被驳回，永不进入 acceptedIssues，收敛判据（连续 3 轮无新确认）被虚假满足。这是单点判断失效 — 与「独立评审」的设计意图冲突。建议：① 引入轮换 evaluator（主进程只做去重+汇总，评估用独立 sub-agent）；或 ② 将主进程判断降级为 confidence label 而非 gate，降低驳回门槛。"
+    },
+    {
+      "file": "/home/dou/.claude/plans/skill-reveiw-cc-cli-github-skills-skill-quiet-graham.md",
+      "line": 74,
+      "severity": "medium",
+      "desc": "收敛判据「连续 3 轮无新确认」假设子进程每轮输出质量稳定。但 plan 自身错误处理（第 66-68 行）已承认子进程可能失败/超时。场景：轮 1 发现 5 个真问题 → 轮 2 子进程质量差（非 crash，只是漏检）确认 0 → 轮 3 同样漏检 → 轮 4 同样。此时 consecutiveEmptyRounds=3 触发 done=true，但实际还有未发现问题。建议：① 增加 minimum total accepted 门槛（如至少 N 条才允许收敛）；或 ② 连续空轮阈值与已确认数量挂钩（确认数越多，阈值越高）。"
+    },
+    {
+      "file": "/home/dou/.claude/plans/skill-reveiw-cc-cli-github-skills-skill-quiet-graham.md",
+      "line": 78,
+      "severity": "medium",
+      "desc": "无用户中断机制。loop 最多 10 轮，每轮全价，但无 SIGINT/优雅停止描述。用户若在第 3 轮后认为已足够，只能等它跑完或杀进程（可能丢状态）。建议：每轮结束后输出进度摘要 + '继续下一轮...（Ctrl+C 停止）'，读状态文件恢复。"
+    },
+    {
+      "file": "/home/dou/.claude/plans/skill-reveiw-cc-cli-github-skills-skill-quiet-graham.md",
+      "line": 50,
+      "severity": "low",
+      "desc": "去重指纹 file:line:desc_hash 未定义 hash 算法。desc 是基于自然语言的，微小措辞差异会导致相同语义问题产生不同 hash，跨轮去重失效。建议：用 file:line 为主键，desc 做相似度匹配（或至少 normalize 空白/标点后 hash）。"
+    },
+    {
+      "file": "/home/dou/.claude/plans/skill-reveiw-cc-cli-github-skills-skill-quiet-graham.md",
+      "line": 99,
+      "severity": "low",
+      "desc": "改动范围仅列 SKILL.md，但现有 SKILL.md 已有 .review-session-<SESSION_ID> 状态文件（maxRounds=3）。新增 .review-loop-state.json 与现有状态文件关系未说明 — 是替代、并存、还是复用？以及 --loop 与 --quick 组合时的行为未定义（--quick 跳过 ⑧-⑨，但 loop 依赖 ⑦ 逐条评估做收敛判断）。"
+    }
+  ],
+  "suggestions": [
+    "将主进程的「逐条评估」改为「去重 + 汇总 + confidence label」，不做硬 gate；或每轮用独立 sub-agent 做 evaluation",
+    "收敛判据加最小确认数门槛：consecutiveEmptyRounds≥3 且 totalAccepted≥N（如 N=3），防止早停",
+    "每轮结束后输出进度 + Ctrl+C 提示，状态文件支持中断恢复",
+    "去重改用 file:line 主键 + normalized desc 相似度，而非裸 hash",
+    "明确 .review-loop-state.json 与现有 .review-session-<SESSION_ID> 的关系（合并或替换）",
+    "补充 --quick + --loop 组合行为定义（跳过逐条评估时如何判断收敛）",
+    "在 --help 或 plan 中加一句成本估算：单轮约 X tokens，3-10 轮预期 Y-Z tokens"
+  ],
+  "planChecks": [
+    {
+      "requirement": "方案覆盖所有已知场景和约束",
+      "status": "partial",
+      "detail": "覆盖了正常循环、子进程失败、去重。缺失：用户中断、与现有 --quick 组合、与现有 .review-session 共存。"
+    },
+    {
+      "requirement": "明确的实施步骤或阶段划分",
+      "status": "implemented",
+      "detail": "循环流程 ①-⑫ 清晰，状态文件 schema 完整。"
+    },
+    {
+      "requirement": "上下游依赖已识别",
+      "status": "implemented",
+      "detail": "依赖 claude -p 子进程、JSON 输出格式、现有 SKILL.md 评审框架。"
+    },
+    {
+      "requirement": "在当前架构下可实施，不引入结构性冲突",
+      "status": "implemented",
+      "detail": "基于现有 claude -p + SKILL.md 模式，架构兼容。主进程 evaluator 独立性是质量问题非结构冲突。"
+    },
+    {
+      "requirement": "已知风险已列出并有缓解措施",
+      "status": "partial",
+      "detail": "子进程失败有重试+中断。缺失：早停风险（收敛判据脆弱）、单点判断风险（主进程盲区）、成本爆炸风险（10×全价）。"
+    },
+    {
+      "requirement": "有回退方案或止损条件",
+      "status": "implemented",
+      "detail": "maxRounds=10 硬上限、连续 2 次子进程失败中断。"
+    },
+    {
+      "requirement": "成功标准可衡量",
+      "status": "implemented",
+      "detail": "5 个验证场景均有可证伪的 pass/fail 条件。"
+    },
+    {
+      "requirement": "有测试策略或验证方案",
+      "status": "implemented",
+      "detail": "5 项验证覆盖正常收敛、失败中断、状态累积、--help 输出、非 loop 兼容性。"
+    },
+    {
+      "requirement": "原始问题 ① session 复用矛盾",
+      "status": "implemented",
+      "detail": "已通过「关键取舍」表显式声明：每轮新建，不用 --resume，理由充分。"
+    },
+    {
+      "requirement": "原始问题 ② 用户交互模型",
+      "status": "implemented",
+      "detail": "已明确：全自动，不等待用户确认。手动场景走普通 /review。"
+    },
+    {
+      "requirement": "原始问题 ③ 子进程错误处理",
+      "status": "implemented",
+      "detail": "已补充：重试一次、连续 2 次失败中断、错误记录到 lastError。"
+    }
+  ]
+}

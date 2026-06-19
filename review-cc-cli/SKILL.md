@@ -38,6 +38,12 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 | `/review --explore` | 上下文 | 允许 grep/读相关文件深入了解 |
 | `/review --rubric <名称>` | 标准 | 指定评审标准文件 |
 | `/review --quick` | 模式 | 跳过主进程自评估（⑧-⑨），直接输出子进程结果，省 token |
+| `/review --loop` | 模式 | 自动收敛循环：多轮独立评审，3 轮无新发现自动停止 |
+| `/review --loop-rounds <N>` | 模式 | 最大轮次上限（默认 10），与 `--loop` 配合使用 |
+| `/review --loop-budget <tokens>` | 模式 | token 预算上限，与 `--loop` 配合使用。不传则不限制 |
+| `/review --help` | — | 显示完整使用说明（不启动子进程） |
+
+> `--loop` 与 `--quick` 互斥，同时指定时报错。
 
 ### 模型映射
 
@@ -130,6 +136,83 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 > 指定 `--quick` 时跳过 ⑧-⑨，步骤⑦之后直接展示子进程原始结果。
 ```
 
+## Loop 模式 (`--loop`)
+
+自动收敛循环：多次独立评审直到不再发现新问题。
+
+### 关键取舍
+
+| 取舍点 | loop 模式的选择 | 原因 |
+|--------|---------------|------|
+| session 复用 | **每轮新建**，不用 `--resume` | 子进程必须独立，否则后续评审丧失独立性 |
+| 用户交互 | **全自动** | 需人工介入走手动 `/review`，loop 定位是全自动收敛 |
+| 成本 | 接受每轮全价 | independence > cache savings |
+
+### 状态文件
+
+`.review-loop-state.json`，与 `.review-session-<SESSION_ID>` 并存，互不干扰：
+
+```json
+{
+  "totalRounds": 0,
+  "maxRounds": 10,
+  "totalTokensUsed": 0,
+  "budgetLimit": null,
+  "acceptedIssues": [],
+  "rejectedIssues": [],
+  "consecutiveEmptyRounds": 0,
+  "lastError": null,
+  "done": false
+}
+```
+
+### 循环流程
+
+```
+/review --loop <范围>
+      ↓
+主进程:
+  ① 读取 .review-loop-state.json
+  ② 如果 done → 展示最终汇总，退出
+  ③ 构造子进程 prompt：
+     - 已确认的问题（N 条）：已采纳，不要重复报告
+     - 已驳回的问题及理由（N 条）：已被判定无效
+     - 要求：专注于尚未覆盖到的真正问题
+  ④ Bash: claude -p --model <模型ID> ... --output-format json
+  ⑤ 提取子进程的 criticalIssues 列表
+  ⑥ 子进程失败（超时/无有效 JSON）：
+     - 本轮不计，重试一次
+     - 连续 2 次失败 → done=true，输出中断提示
+  ⑦ 逐条评估（全自动，用户不介入）：
+     - Read 源码 → 合理 → 加入 acceptedIssues（file:line 去重）
+     - Read 源码 → 不合理 → 加入 rejectedIssues + 理由
+     - 模糊问题标注置信度（高/中/低）
+  ⑧ 本轮无新确认 → consecutiveEmptyRounds++
+     否则 → consecutiveEmptyRounds = 0
+  ⑨ 从 claude -p 输出中提取 usage tokens，累加到 totalTokensUsed
+  ⑩ 写入 .review-loop-state.json
+  ⑪ 停止条件（优先级从高到低）：
+     A. budgetLimit 已设 且 totalTokensUsed ≥ budgetLimit → 达预算
+     B. consecutiveEmptyRounds ≥ 3 → 已收敛
+     C. totalRounds ≥ maxRounds → 达上限
+  ⑫ 满足任一 → done=true，输出最终汇总
+  ⑬ 否则 → 展示进度（轮次/已用token/空轮数），回到③
+```
+
+### 最终汇总
+
+```
+🔍 自动评审循环结束
+
+✅ 已确认并采纳的问题（共 N 条）：
+  1. [high] src/a.js:42 — ...
+
+⛔ 已驳回的问题及理由（共 N 条）：
+  1. src/b.js:88 — ... → 驳回理由
+
+📊 共 N 轮评审，确认 N 条，驳回 N 条，总 token N
+```
+
 ## 子进程输出格式
 
 主实例解析子进程的 JSON 输出时，子进程 prompt 必须要求以下 JSON 结构：
@@ -205,6 +288,15 @@ Rubric 的 plan.md 已包含此项检查。
 ### 核心原则
 
 > 每一步必须有可证伪的验证（不是"看起来 OK"），通过才能继续下一步。
+
+## --help 输出
+
+触发 `/review --help` 时输出：
+1. 所有参数列表及说明（用法表）
+2. 用法示例 3-5 条
+3. Rubric 自动匹配规则表
+4. Loop 模式说明和流程图
+5. 错误处理概览
 
 ## 错误处理
 
