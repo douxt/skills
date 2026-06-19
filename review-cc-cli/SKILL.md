@@ -5,7 +5,7 @@ allowedTools: Read,Grep,Glob,Bash
 license: MIT
 ---
 
-# /review
+# /review-cc-cli
 
 ## 安装
 
@@ -17,31 +17,31 @@ cp -r review-cc-cli ~/.claude/skills/review-cc-cli
 cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 ```
 
-之后在任意项目中执行 `/review` 即可。
+之后在任意项目中执行 `/review-cc-cli` 即可。
 
 在当前对话中启动一个**独立上下文**的 `claude -p` 实例，只读评审代码/计划/测试。
 多轮评审**复用同一 session**，第 2 轮起利用 prompt cache 大幅降本。
 
 ## 评审范围指定
 
-`/review` 支持灵活指定评审内容：
+`/review-cc-cli` 支持灵活指定评审内容：
 
 | 用法 | 分类 | 说明 |
 |------|------|------|
-| `/review` | — | 默认审查未提交改动 |
-| `/review <文件\|目录\|git范围>` | 范围 | 指定审查对象 |
-| `/review --opus` | 模型 | 最强模型（**默认**） |
-| `/review --sonnet` | 模型 | 平衡模型 |
-| `/review --haiku` | 模型 | 快速评审，最省 |
-| `/review --model <ID>` | 模型 | 自定义任意模型 |
-| `/review --shallow` | 上下文 | 只看 diff，不读额外文件 |
-| `/review --explore` | 上下文 | 允许 grep/读相关文件深入了解 |
-| `/review --rubric <名称>` | 标准 | 指定评审标准文件 |
-| `/review --quick` | 模式 | 跳过主进程自评估（⑧-⑨），直接输出子进程结果，省 token |
-| `/review --loop` | 模式 | 自动收敛循环：多轮独立评审，3 轮无新发现自动停止 |
-| `/review --loop-rounds <N>` | 模式 | 最大轮次上限（默认 10），与 `--loop` 配合使用 |
-| `/review --loop-budget <tokens>` | 模式 | token 预算上限，与 `--loop` 配合使用。不传则不限制 |
-| `/review --help` | — | 显示完整使用说明（不启动子进程） |
+| `/review-cc-cli` | — | 默认审查未提交改动 |
+| `/review-cc-cli <文件\|目录\|git范围>` | 范围 | 指定审查对象 |
+| `/review-cc-cli --opus` | 模型 | 最强模型（**默认**） |
+| `/review-cc-cli --sonnet` | 模型 | 平衡模型 |
+| `/review-cc-cli --haiku` | 模型 | 快速评审，最省 |
+| `/review-cc-cli --model <ID>` | 模型 | 自定义任意模型 |
+| `/review-cc-cli --shallow` | 上下文 | 只看 diff，不读额外文件 |
+| `/review-cc-cli --explore` | 上下文 | 允许 grep/读相关文件深入了解 |
+| `/review-cc-cli --rubric <名称>` | 标准 | 指定评审标准文件 |
+| `/review-cc-cli --quick` | 模式 | 跳过主进程自评估（⑧-⑨），直接输出子进程结果，省 token |
+| `/review-cc-cli --loop` | 模式 | 自动收敛循环：多轮独立评审，3 轮无新发现自动停止 |
+| `/review-cc-cli --loop-rounds <N>` | 模式 | 最大轮次上限（默认 10），与 `--loop` 配合使用 |
+| `/review-cc-cli --loop-budget <tokens>` | 模式 | token 预算上限，与 `--loop` 配合使用。不传则不限制 |
+| `/review-cc-cli --help` | — | 显示完整使用说明（不启动子进程） |
 
 > `--loop` 与 `--quick` 互斥，同时指定时报错。
 
@@ -95,7 +95,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 ## 流程
 
 ```
-你 → /review [范围]
+你 → /review-cc-cli [范围]
       ↓
 主实例（当前对话）:
   ① 确定评审范围
@@ -145,7 +145,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 | 取舍点 | loop 模式的选择 | 原因 |
 |--------|---------------|------|
 | session 复用 | **每轮新建**，不用 `--resume` | 子进程必须独立，否则后续评审丧失独立性 |
-| 用户交互 | **全自动** | 需人工介入走手动 `/review`，loop 定位是全自动收敛 |
+| 用户交互 | **全自动** | 需人工介入走手动 `/review-cc-cli`，loop 定位是全自动收敛 |
 | 成本 | 接受每轮全价 | independence > cache savings |
 
 ### 状态文件
@@ -169,7 +169,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 ### 循环流程
 
 ```
-/review --loop <范围>
+/review-cc-cli --loop <范围>
       ↓
 主进程:
   ① 读取 .review-loop-state.json
@@ -283,7 +283,7 @@ Rubric 的 plan.md 已包含此项检查。
 |------|------|---------|----------------|
 | Plan Review | 执行前 | 方案合理性 + 每步有验证手段 | `--rubric plan <plan.md>` |
 | Findings Review | 探索后、改代码前 | 实际代码情况是否改变了原计划 | `--explore <目录>` |
-| Diff Review | 改完后、提交前 | 实际改动是否符合预期 | `/review <文件>`（默认模式） |
+| Diff Review | 改完后、提交前 | 实际改动是否符合预期 | `/review-cc-cli <文件>`（默认模式） |
 
 ### 核心原则
 
@@ -291,7 +291,7 @@ Rubric 的 plan.md 已包含此项检查。
 
 ## --help 输出
 
-触发 `/review --help` 时输出：
+触发 `/review-cc-cli --help` 时输出：
 1. 所有参数列表及说明（用法表）
 2. 用法示例 3-5 条
 3. Rubric 自动匹配规则表
@@ -318,6 +318,6 @@ Rubric 的 plan.md 已包含此项检查。
   - `<SESSION_ID>` 从环境变量 `CLAUDE_CODE_SESSION_ID` 获取，每个会话独立
   - 主实例在步骤 ⑤-⑥ 负责读写此文件
   - 并发会话各自读写自己的文件，不冲突
-- 首次 `/review` → round=1，创建 session，写 `.review-session-<SESSION_ID>`
-- 后续 `/review` → 读 `.review-session-<SESSION_ID>`，round+1，`--resume` 继续
+- 首次 `/review-cc-cli` → round=1，创建 session，写 `.review-session-<SESSION_ID>`
+- 后续 `/review-cc-cli` → 读 `.review-session-<SESSION_ID>`，round+1，`--resume` 继续
 - round ≥ maxRounds 时强制 escalate，删 `.review-session-<SESSION_ID>`
