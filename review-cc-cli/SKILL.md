@@ -94,7 +94,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
   ① 确定评审范围
   ② git diff --stat 确认变更集
   ③ 构造 claude -p 命令（只传 --model <ID>，不传 skill 自有参数）
-  ③-1 安全自查：确认命令中不含 opus/sonnet/haiku/explore/shallow 等 skill 参数
+  ③-1 安全自查：确认命令中不含 --opus/--sonnet/--haiku/--explore/--shallow 等 skill 自有开关
   ④ Bash: claude -p --model opus --permission-mode auto \
           --settings ~/.claude/settings-review.json --output-format json
           （首次创建新 session；后续 --resume <session_id> 重用）
