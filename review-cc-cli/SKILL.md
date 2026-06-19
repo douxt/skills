@@ -47,14 +47,14 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 
 ### 模型映射
 
-子进程 `claude -p` 默认使用系统的当前模型。先读 `~/.claude/settings.json` 获取自定义模型 ID，没有再回退：
+skill 不读 `settings.json`（避免触碰敏感配置），模型别名直接透传给 `claude -p`，由 CLI 自身通过环境变量解析：
 
-| 参数 | 读取配置键 | 回退 | 默认 |
-|------|-----------|------|------|
-| `--opus`（默认） | `ANTHROPIC_DEFAULT_OPUS_MODEL` | `ANTHROPIC_MODEL` → 不传 | **默认** |
-| `--sonnet` | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `ANTHROPIC_MODEL` → 不传 | |
-| `--haiku` | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `ANTHROPIC_MODEL` → 不传 | |
-| `--model <原始ID>` | 直接传递 | — | |
+| 参数 | 传给 claude -p | 说明 |
+|------|---------------|------|
+| `--opus`（默认） | `--model opus` | CLI 查 `ANTHROPIC_DEFAULT_OPUS_MODEL` 环境变量解析 |
+| `--sonnet` | `--model sonnet` | CLI 查 `ANTHROPIC_DEFAULT_SONNET_MODEL` 环境变量解析 |
+| `--haiku` | `--model haiku` | CLI 查 `ANTHROPIC_DEFAULT_HAIKU_MODEL` 环境变量解析 |
+| `--model <ID>` | `--model <ID>` | 直接透传 |
 
 模型参数与上下文参数独立，可组合使用。默认 `--opus`。
 
@@ -100,8 +100,8 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 主实例（当前对话）:
   ① 确定评审范围
   ② git diff --stat 确认变更集
-  ③ 构造 claude -p 命令（只传 --model <ID>，不传 skill 自有参数）
-  ③-1 安全自查：确认命令中不含 --opus/--sonnet/--haiku/--explore/--shallow 等 skill 自有开关
+  ③ 构造 claude -p 命令：将 skill 参数映射为 --model <别名>（如 --opus → --model opus），不传其他 skill 自有参数
+  ③-1 安全自查：确认命令中不含 --explore/--shallow/--quick/--loop 等非模型类 skill 自有开关
   ④ Bash: claude -p --model <模型ID> --permission-mode auto \
           --settings ~/.claude/settings-review.json --output-format json
           （首次创建新 session；后续 --resume <session_id> 重用）
