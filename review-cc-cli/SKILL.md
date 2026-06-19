@@ -196,7 +196,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
      B. consecutiveEmptyRounds ≥ 3 → 已收敛
      C. totalRounds ≥ maxRounds → 达上限
   ⑫ 满足任一 → done=true，输出最终汇总
-  ⑬ 否则 → 展示进度（轮次/已用token/空轮数），回到③
+  ⑬ 否则 → 展示进度，立即回到③（全自动，不询问不等待，禁止在此处打断循环）
 ```
 
 ### 最终汇总
