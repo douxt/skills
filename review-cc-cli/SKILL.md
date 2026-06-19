@@ -26,32 +26,30 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 
 `/review` 支持灵活指定评审内容：
 
-| 用法 | 评审范围 | 示例 |
-|------|----------|------|
-| `/review` | 未提交的代码改动（默认） | `/review` |
-| `/review <文件>` | 指定文件（代码/文档/计划） | `/review plan.md` |
-| `/review <目录>` | 指定目录下全部文件 | `/review src/utils/` |
-| `/review <git范围>` | git 历史改动 | `/review HEAD~3`、`/review main..feature` |
-| `/review <计划文件>` | 只评审计划文档本身 | `/review docs/plan.md` |
-| `/review <计划文件> +` | 实施对照评审 | `/review plan.md +` |
-| `/review --shallow` | 聚焦审查，不额外探索代码库 | `/review --shallow src/` |
-| `/review --deep` | 允许审查者读相关文件深入了解上下文 | `/review --deep src/foo.js` |
-| `/review --fast` | 用便宜模型快速评审（默认） | `/review --fast src/` |
-| `/review --model <ID>` | 指定任意模型 | `/review --model gpt-4o src/` |
-| `/review --rubric <名称>` | 指定评审标准文件 | `/review --rubric security src/auth/` |
+| 用法 | 分类 | 说明 |
+|------|------|------|
+| `/review` | — | 默认审查未提交改动 |
+| `/review <文件\|目录\|git范围>` | 范围 | 指定审查对象 |
+| `/review --opus` | 模型 | 最强模型（**默认**） |
+| `/review --sonnet` | 模型 | 平衡模型 |
+| `/review --haiku` | 模型 | 快速评审，最省 |
+| `/review --model <ID>` | 模型 | 自定义任意模型 |
+| `/review --shallow` | 上下文 | 只看 diff，不读额外文件 |
+| `/review --explore` | 上下文 | 允许 grep/读相关文件深入了解 |
+| `/review --rubric <名称>` | 标准 | 指定评审标准文件 |
 
 ### 模型映射
 
 子进程 `claude -p` 默认使用系统的当前模型。先读 `~/.claude/settings.json` 获取自定义模型 ID，没有再回退：
 
-| 参数 | 读取配置键 | 回退 | 适用 |
+| 参数 | 读取配置键 | 回退 | 默认 |
 |------|-----------|------|------|
-| `--fast`（默认）| `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `ANTHROPIC_MODEL` → 不传 | 快速审查，最省 |
-| `--medium` | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `ANTHROPIC_MODEL` → 不传 | 平衡质量和成本 |
-| `--deep` | `ANTHROPIC_DEFAULT_OPUS_MODEL` | `ANTHROPIC_MODEL` → 不传 | 深度审查，最强 |
-| `--model <原始ID>` | 直接传递 | — | 自定义任意模型 |
+| `--opus`（默认） | `ANTHROPIC_DEFAULT_OPUS_MODEL` | `ANTHROPIC_MODEL` → 不传 | **默认** |
+| `--sonnet` | `ANTHROPIC_DEFAULT_SONNET_MODEL` | `ANTHROPIC_MODEL` → 不传 | |
+| `--haiku` | `ANTHROPIC_DEFAULT_HAIKU_MODEL` | `ANTHROPIC_MODEL` → 不传 | |
+| `--model <原始ID>` | 直接传递 | — | |
 
-模型参数与上下文参数（`--shallow`/`--deep`）独立。默认 `--fast`。
+模型参数与上下文参数独立，可组合使用。默认 `--opus`。
 
 ## Rubric 自动匹配
 
@@ -78,7 +76,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 |------|------|----------|
 | 默认 | 审查指定文件，可读明显相关的文件 | 常规代码评审 |
 | `--shallow` | 只看 diff 内容 | 格式检查、小改动 |
-| `--deep` | 可 grep 项目结构、读相关模块 | 跨模块改动、架构评审 |
+| `--explore` | 可 grep 项目结构、读相关模块 | 跨模块改动、架构评审 |
 
 ## 专用 settings 文件
 
@@ -95,7 +93,9 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 主实例（当前对话）:
   ① 确定评审范围
   ② git diff --stat 确认变更集
-  ③ Bash: claude -p [--model <模型ID>] --permission-mode auto \
+  ③ 构造 claude -p 命令（只传 --model <ID>，不传 skill 自有参数）
+  ③-1 安全自查：确认命令中不含 opus/sonnet/haiku/explore/shallow 等 skill 参数
+  ④ Bash: claude -p --model opus --permission-mode auto \
           --settings ~/.claude/settings-review.json --output-format json
           （首次创建新 session；后续 --resume <session_id> 重用）
       ↓
@@ -114,7 +114,17 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
       文件名：.review-session-${CLAUDE_CODE_SESSION_ID}
       内容：{"sessionId":"<子进程 session_id>","round":<N>,"maxRounds":3}
      （若 round ≥ maxRounds，删除会话文件）
-  ⑦ 展示评审报告
+  ⑦ 读取 `.review-report-<slug>.json`，提取 criticalIssues 列表
+  ⑧ 逐条核实子进程的发现：
+     - Read 对应文件/行获取源码上下文
+     - 判断是否为真实问题（排除 false positive）
+     - 判断严重级别是否恰当
+     - 标记可疑项 / 补充遗漏
+  ⑨ 输出最终评估报告：
+     - ✅ 已确认的问题（保持或调整 severity）
+     - ⚠️ 存疑/误报（附排除理由）
+     - 🔍 追加发现（如有）
+     - 📊 评审质量总结
 ```
 
 ## 子进程输出格式
@@ -136,7 +146,33 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 }
 ```
 
-主实例从 `result` 字段的文本中提取上述 JSON 块，解析 verdict 和 nextStep。
+主实例从 `result` 字段的文本中提取上述 JSON 块。
+
+### 最终评估报告格式
+
+主实例在步骤 ⑨ 汇总以下内容：
+
+```
+🔍 最终评估报告
+
+✅ 已确认的问题：
+  1. [high] path/file.js:42 — 问题描述（子进程原判）
+     → 核实结论：真实问题，严重级别合适
+
+⚠️ 存疑/误报：
+  1. path/file.js:88 — 原判 XX 问题
+     → 排除理由：此处已在前置条件中处理，不会到达
+
+🔍 追加发现（主进程补充）：
+  1. [medium] path/other.js:15 — 遗漏的 XX 问题
+
+📊 评审质量总结：
+  - 总发现数：N
+  - 确认数：N
+  - 误报数：N
+  - 补充数：N
+  - 评审质量评价：良好/一般/需改进
+```
 
 ## 错误处理
 
