@@ -150,7 +150,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 
 ### 状态文件
 
-`.review-loop-state.json`，与 `.review-session-<SESSION_ID>` 并存，互不干扰：
+`.review-loop-state-${CLAUDE_CODE_SESSION_ID}`（`CLAUDE_CODE_SESSION_ID` 未设时用 `.review-loop-state`），与 `.review-session-<SESSION_ID>` 并存，互不干扰：
 
 ```json
 {
@@ -172,7 +172,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 /review-cc-cli --loop <范围>
       ↓
 主进程:
-  ① 读取 .review-loop-state.json
+  ① 读取 .review-loop-state-${CLAUDE_CODE_SESSION_ID}
   ② 如果 done → 展示最终汇总，退出
   ③ 构造子进程 prompt：
      - 已确认的问题（N 条）：已采纳，不要重复报告
@@ -190,7 +190,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
   ⑧ 本轮无新确认 → consecutiveEmptyRounds++
      否则 → consecutiveEmptyRounds = 0
   ⑨ 从 claude -p 输出中提取 usage tokens，累加到 totalTokensUsed
-  ⑩ 写入 .review-loop-state.json
+  ⑩ 写入 .review-loop-state-${CLAUDE_CODE_SESSION_ID}
   ⑪ 停止条件（优先级从高到低）：
      A. budgetLimit 已设 且 totalTokensUsed ≥ budgetLimit → 达预算
      B. consecutiveEmptyRounds ≥ 3 → 已收敛
