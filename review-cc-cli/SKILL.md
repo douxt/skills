@@ -37,6 +37,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 | `/review --shallow` | 上下文 | 只看 diff，不读额外文件 |
 | `/review --explore` | 上下文 | 允许 grep/读相关文件深入了解 |
 | `/review --rubric <名称>` | 标准 | 指定评审标准文件 |
+| `/review --quick` | 模式 | 跳过主进程自评估（⑧-⑨），直接输出子进程结果，省 token |
 
 ### 模型映射
 
@@ -95,7 +96,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
   ② git diff --stat 确认变更集
   ③ 构造 claude -p 命令（只传 --model <ID>，不传 skill 自有参数）
   ③-1 安全自查：确认命令中不含 --opus/--sonnet/--haiku/--explore/--shallow 等 skill 自有开关
-  ④ Bash: claude -p --model opus --permission-mode auto \
+  ④ Bash: claude -p --model <模型ID> --permission-mode auto \
           --settings ~/.claude/settings-review.json --output-format json
           （首次创建新 session；后续 --resume <session_id> 重用）
       ↓
@@ -103,18 +104,18 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
   要求子进程：
     - Read 要评审的文件
     - Read ~/.claude/review-rubrics/{rubric}.md 获取评审标准
-    - Write 评审报告到 `.review-report-<slug>.json`（项目根目录，自动匹配 `Write(.review-*)` 规则）
-    - 输出 JSON 格式结果
+    - 输出 JSON 格式结果（在回复中包含以下定义的 JSON 结构）
       ↓
-子实例执行评审，写入 `.review-report-<slug>.json`（项目根目录）
+子实例执行评审。`claude -p --output-format json` 返回外层结构
+`{type, result, session_id, ...}`，result 字段为子进程完整回复。
       ↓
 主实例:
-  ⑤ 从 JSON 结果中提取 session_id 和 result
+  ⑤ 从外层 JSON 提取 session_id（会话管理用）和 result 文本
   ⑥ 写会话文件：
       文件名：.review-session-${CLAUDE_CODE_SESSION_ID}
       内容：{"sessionId":"<子进程 session_id>","round":<N>,"maxRounds":3}
      （若 round ≥ maxRounds，删除会话文件）
-  ⑦ 读取 `.review-report-<slug>.json`，提取 criticalIssues 列表
+  ⑦ 从 result 文本中提取子进程输出的 JSON 评审结果
   ⑧ 逐条核实子进程的发现：
      - Read 对应文件/行获取源码上下文
      - 判断是否为真实问题（排除 false positive）
@@ -125,6 +126,8 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
      - ⚠️ 存疑/误报（附排除理由）
      - 🔍 追加发现（如有）
      - 📊 评审质量总结
+
+> 指定 `--quick` 时跳过 ⑧-⑨，步骤⑦之后直接展示子进程原始结果。
 ```
 
 ## 子进程输出格式
@@ -134,7 +137,6 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 ```json
 {
   "verdict": "APPROVED | CHANGES_REQUESTED | BLOCKED",
-  "round": 1,
   "summary": "总体评价",
   "criticalIssues": [
     {"file": "路径", "line": 行号, "severity": "high|medium|low", "desc": "问题描述"}
@@ -194,11 +196,11 @@ Rubric 的 plan.md 已包含此项检查。
 
 ### 三个关键门禁
 
-| 门禁 | 时机 | 检查什么 |
-|------|------|---------|
-| Plan Review | 执行前 | 方案合理性 + 每步有验证手段 |
-| Findings Review | 探索后、改代码前 | 实际代码情况是否改变了原计划 |
-| Diff Review | 改完后、提交前 | 实际改动是否符合预期 |
+| 门禁 | 时机 | 检查什么 | 对应 skill 用法 |
+|------|------|---------|----------------|
+| Plan Review | 执行前 | 方案合理性 + 每步有验证手段 | `--rubric plan <plan.md>` |
+| Findings Review | 探索后、改代码前 | 实际代码情况是否改变了原计划 | `--explore <目录>` |
+| Diff Review | 改完后、提交前 | 实际改动是否符合预期 | `/review <文件>`（默认模式） |
 
 ### 核心原则
 
@@ -213,6 +215,10 @@ Rubric 的 plan.md 已包含此项检查。
 | `claude` 命令不存在 | 告知用户，降级为当前对话内直接评审 |
 | 子进程超时（>60s） | 重试一次，再失败则提示用户手动检查 |
 | 输出无有效 JSON 块 | 把原始文本当评审报告展示 |
+| diff 为空（git diff 无输出） | 提示无改动，跳过子进程 |
+| `CLAUDE_CODE_SESSION_ID` 未设 | 步骤⑥用固定名 `.review-session` 代替 |
+| rubric 文件缺失 | 降级为 default rubric，记录日志 |
+| `--resume` 到已过期/不存在的 session | 重新创建新 session，提示用户 |
 
 ## 多轮会话复用
 
