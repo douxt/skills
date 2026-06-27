@@ -155,3 +155,28 @@ review-cc-cli 第一版不实现自适应路由（增加复杂度），默认全
 | 多 agent 对同一问题重复报告 | verifier 去重 |
 | verifier 自身误判 | 不确定项标 uncertain 而非直接驳回 |
 | 并发 Bash 任务资源竞争 | 最多 4 个并行 agent，不超过主机承载力 |
+
+## Grill 确认结论（2026-06-27）
+
+以下经多轮访谈确认，已纳入 Phase 1（原 Phase 2/3 项合并，不延期）：
+
+### Verifier 行为
+- **每条 finding 都验证**，非仅冲突项。依据：Anthropic ultrareview <1% 误报率
+- **先排序再验证**：≤15 条全验，>15 条按 severity 截断。依据：109-agent 事后分析节省 79% agent
+- **verifier 不生成新发现**：分离关注点（finder=敏感度，verifier=特异度）。遗漏标注「⚠️ Verifier 提示」
+- **verifier 分批验证**：同文件 findings 一次 Read 验证全部，减少重复 I/O
+
+### 去重策略（三级管道）
+- Stage 1：file:line 精确碰撞 → 直接合并，severity 取高
+- Stage 2：同文件 + (行号差 ≤20 或 Jaccard(title) > 0.3) → 候选对
+- Stage 3：候选对送入 verifier 判「同一问题不同表象」→ 合并 + 交叉引用
+
+### 并行 + Loop 组合
+- 收敛判断：全局维度合计（方案 A），非逐维独立
+- 阻断级维度（correctness/security）失败 → 整轮不计，重试
+- 非阻断维度（style）失败 → 标注缺失，照常收敛
+
+### 实施阶段调整
+- Phase 1 合并：核心并行 + verifier 全验 + 三级去重 + 阻断级重试（原方案分散在三个 phase）
+- Phase 2 仅留：自适应路由（分析 diff 选维度）
+- Phase 3 仅留：同维度对抗 + 持久化 agent team（等 API 成熟）
