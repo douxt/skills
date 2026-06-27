@@ -12,12 +12,14 @@
 
 每个 agent 只审一个维度，独立上下文避免锚定偏差：
 
-| 维度 | Rubric | 关注点 |
-|------|--------|--------|
-| **security** | security.md | OWASP top 10、注入、认证、密钥泄露 |
-| **correctness** | default.md | 逻辑错误、边界条件、空值、异常处理 |
-| **performance** | performance.md | N+1、内存泄漏、阻塞 I/O、算法复杂度 |
-| **style** | default.md | 可维护性、命名、SOLID、DRY |
+| 维度 | Rubric | 阻断 | 关注点 |
+|------|--------|------|--------|
+| **correctness** | correctness.md | ✅ | 逻辑、边界、空值、类型、异常、状态、并发 |
+| **security** | security.md | ✅ | OWASP top 10、注入、认证、密钥泄露 |
+| **performance** | performance.md | ⚠️ | N+1、内存泄漏、阻塞 I/O、算法复杂度 |
+| **style** | default.md | ❌ | 可维护性、命名、SOLID、DRY、死代码 |
+
+> 审查顺序不可颠倒：correctness（阻断）→ security（阻断）→ performance（警告）→ style（建议）。
 
 > 参考：Anthropic 内部 Explorer×N 模式——每个 explorer 独立搜索，互不知晓对方发现。
 
