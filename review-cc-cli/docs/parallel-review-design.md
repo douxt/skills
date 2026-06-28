@@ -14,7 +14,7 @@
 
 | 维度 | Rubric | 阻断 | 关注点 |
 |------|--------|------|--------|
-| **correctness** | correctness.md | ✅ | 逻辑、边界、空值、类型、异常、状态、并发 |
+| **correctness** | correctness.md | ✅ | 逻辑、边界、空值、类型、异步/异常、状态、并发 |
 | **security** | security.md | ✅ | OWASP top 10、注入、认证、密钥泄露 |
 | **performance** | performance.md | ⚠️ | N+1、内存泄漏、阻塞 I/O、算法复杂度 |
 | **style** | default.md | ❌ | 可维护性、命名、SOLID、DRY、死代码 |
@@ -70,23 +70,24 @@ review-cc-cli 第一版不实现自适应路由（增加复杂度），默认全
      ┌────────┬────────┬────────┬────────┐
      │ claude │ claude │ claude │ claude │
      │  -p    │  -p    │  -p    │  -p    │
-     │security│correct │  perf  │ style  │
+     │correct │security│  perf  │ style  │
      │rubric  │rubric  │rubric  │rubric  │
      └───┬────┴───┬────┴───┬────┴───┬────┘
          │        │        │        │
   ③ 收集所有 agent 的 JSON 输出
          │
-  ④ 主进程初步去重（file:line 碰撞 → severity 取高）
+  ④ 主进程去重：Stage 1（file:line 精确碰撞）+ Stage 2（候选配对：同文件 + 行号差 ≤20 或 Jaccard > 0.3，阈值参考 CodeX-Verify 实践，后续可 A/B 调优）
          │
   ⑤ 启动 verifier agent（claude -p）
-     - 接收去重后的 finding 列表
-     - 逐条 Read 源码验证真实性
+     - Stage 3：LLM 判重「同一问题不同表象」→ 合并+交叉引用
+     - 逐条 Read 源码验证真实性（≤15 全验，>15 按 severity 截断）
      - 标记 confirmed / false_positive / uncertain
          │
   ⑥ 主进程输出合并报告：
      ✅ Confirmed（N 条）
      ⚠️ Uncertain（N 条）
      ❌ False Positive（N 条）
+             ⏭️ Unverified（N 条，超出配额未经 verifier 确认）
      📊 各维度统计 + agent 覆盖度
 ```
 
@@ -97,19 +98,23 @@ review-cc-cli 第一版不实现自适应路由（增加复杂度），默认全
 | `--loop` | ✅ | 每轮并行，verifier 确认后写入 acceptedIssues |
 | `--scope` | ✅ | scope 传给所有维度 agent |
 | `--with` | ✅ | 参考文档传给所有维度 agent |
-| `--rubric` | ⚠️ | 手动指定时禁用维度分离，所有 agent 用同一 rubric |
-| `--quick` | ✅ | 跳过主进程评估，但 verifier 仍执行 |
+| `--rubric` | ⚠️ | 输出 warning「--rubric 与 --parallel 互斥，已降级为串行单 agent 评审」，然后正常执行。若需多 agent 独立用同一 rubric，不加 `--rubric` |
+| `--quick` | ✅ | 跳过步骤⑥合并报告格式化，直接展示 verifier 原始 JSON + 各维度 agent 原始输出 |
 | `--timeout` | ✅ | 每个 agent 独立超时控制 |
+| `--model`/`--opus`/`--sonnet`/`--haiku` | ✅ | 所有并行 agent 共用同一模型 |
+| `--shallow` | ✅ | 传给所有维度 agent |
+| `--explore` | ✅ | 传给所有维度 agent |
 
 ## 失败处理
 
 | 场景 | 处理 |
 |------|------|
-| 某维度 agent 超时 | 跳过该维度，报告中标注 "security: 超时未完成" |
-| 某维度 agent 输出无 JSON | 该维度降级为原始文本展示 |
+| 某维度 agent 超时（瞬态） | 阻断级（correctness/security）→ 保留成功维度 findings，仅重试失败维度；非阻断级 → 标注缺失 |
+| 某维度 agent 被安全拦截（持久） | 阻断级/非阻断级均不重试（重试必然再被拦），记录到 errors，标注缺失 |
+| 某维度 agent 输出无 JSON | 同超时，降级为原始文本标注 |
 | 全部 agent 失败 | 降级为串行模式重试一次 |
-| verifier 失败 | 跳过验证步骤，原始结果标注 "未经 verifier 确认" |
-| 某维度 agent 被安全拦截 | 同超时处理，记录到 errors |
+| verifier 失败 | 跳过验证步骤，原始结果标注「未经 verifier 确认」 |
+| 全部轮次某阻断维持续失败 | 记录到 errors，最终汇总输出缺失警示 |
 
 ## 成本估算
 
@@ -119,27 +124,55 @@ review-cc-cli 第一版不实现自适应路由（增加复杂度），默认全
 | --parallel 4 维 | 3-4× | 20-60s（并行瓶颈 = 最慢维度） |
 | --parallel 2 维 | 1.5-2× | 15-45s |
 | --parallel --loop ×3 轮 | 9-12× | 60-180s |
+| verifier（独立） | +0.2-0.4× | +5-15s（≤15 条） |
+
+> 并行无 session 复用：串行通过 `--resume` 复用 prompt cache 降本，并行各 agent 均为冷启动全价。实际成本差距可能大于上表倍数。
 
 ## 实施步骤
 
-### Phase 1: 核心并行（最小可用）
+### Phase 1: 核心并行（含 verifier 全验 + 三级去重 + 阻断级重试）
+
+Grill 后将原 Phase 2/3 硬需求合并至此。
 
 1. SKILL.md 用法表加 `--parallel [维度列表]`
-2. 主流程加步骤 ②-⑥（并行启动、收集、verifier、合并）
-3. 并行启动用 Bash 后台任务（`run_in_background: true`），TaskOutput 收集结果
-4. verifier prompt 模板
+2. 主流程加并行分支（并行启动、三级去重管道、verifier、合并报告）
+3. 并行启动用 Bash 工具（`run_in_background: true`）执行 `claude -p` 命令，TaskOutput 收集结果
+4. verifier 逐条验证所有 findings（≤15 全验，>15 按 severity 截断）
+5. 三级去重管道（精确碰撞 → 候选配对 → LLM 判重）
+6. 阻断级维度失败 → 本轮不计入有效轮次，保留其他成功维度 findings，仅重试失败维度；非阻断级 → 标注缺失
 
-### Phase 2: 去重与降噪
+### Phase 2: 自适应路由
 
-1. file:line 精确匹配去重
-2. desc 相似度去重（normalize 空白后 Jaccard > 0.7）
-3. severity 冲突时取高
+分析 diff 内容后只激活相关维度（如纯 CSS 不激活 security agent，纯测试不激活 performance agent）。
 
-### Phase 3: 优化
+### Phase 3: 对抗与持久化
 
-1. 自适应路由（分析 diff 选维度）
-2. 同维度对抗（`--parallel security --adversarial`）
-3. 并行 loop（每轮并行 + 收敛判断改为跨维度）
+1. 同维度对抗（`--parallel security --adversarial`）
+2. 持久化 agent team（Agent Teams API 成熟后接入）
+3. 验证策略待阶段启动时制定
+
+## 验证策略
+
+### 每步验证门禁
+
+| 步骤 | 验证手段 |
+|------|---------|
+| 用法表 + 参数解析 | 跑 `/review-cc-cli --parallel --help`，确认参数提示/类型校验正常 |
+| 并行启动 | 手动跑 `--parallel` 对比 `--parallel` 关闭时的输出，确认二者不冲突 |
+| 三级去重 | 构造碰撞 case：同一 file:line + 同文件差 5-10 行相似 desc → 验证是否正确合并 |
+| verifier 全验 | 构造 3 条已知 false positive + 2 条 real bug → verifier 应标记 3 FP + 2 confirmed |
+| 阻断级重试 | 模拟某 agent 退出码 1 → 确认不计轮次，重试触发 |
+
+### 回归测试
+
+- 现有串行路径不受影响：`/review-cc-cli`（无 `--parallel`）行为与改前完全一致
+- 用 5 条已知 bug 的 fixture 文件，跑串行 ++ `--parallel` 分别评审，确认并行不遗漏串行能发现的问题
+
+### 验收标准
+
+- verifier FP 率 < 10%（误杀 ≤ 1 条/10 条）
+- 并行 4 维 vs 串行：发现数 ≥ 串行，且新发现的 issue 被人工判定为真实
+- 去重后无语义重复项（同根因不同位置 → 交叉引用，非漏报）
 
 ## 不做的
 
@@ -155,6 +188,8 @@ review-cc-cli 第一版不实现自适应路由（增加复杂度），默认全
 | 多 agent 对同一问题重复报告 | verifier 去重 |
 | verifier 自身误判 | 不确定项标 uncertain 而非直接驳回 |
 | 并发 Bash 任务资源竞争 | 最多 4 个并行 agent，不超过主机承载力 |
+| API 并发限流 | 4 个 agent 不超过常规并发上限；claude -p 内置重试+退避机制 |
+| 主进程去重 scalability | finding 总数 >60 条时，先按 severity 截断（保留 high+medium），再进入 Stage 2 |
 
 ## Grill 确认结论（2026-06-27）
 
@@ -173,7 +208,8 @@ review-cc-cli 第一版不实现自适应路由（增加复杂度），默认全
 
 ### 并行 + Loop 组合
 - 收敛判断：全局维度合计（方案 A），非逐维独立
-- 阻断级维度（correctness/security）失败 → 整轮不计，重试
+- 阻断级维度超时 → 保留成功维度 findings（已写入 acceptedIssues），仅重试失败维度
+- 阻断级被安全拦截 → 不重试，标注缺失
 - 非阻断维度（style）失败 → 标注缺失，照常收敛
 
 ### 实施阶段调整
