@@ -53,7 +53,7 @@ cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 | `--loop` | 模式 | 自动收敛循环，3 轮空转停止 |
 | `--loop-rounds <N>` | 模式 | 最大轮次（默认 10） |
 | `--loop-budget <tokens>` | 模式 | token 预算上限 |
-| `--parallel [维度]` | 模式 | 多 agent 并行分维评审（设计中） |
+| `--parallel [维度]` | 模式 | 多 agent 并行分维评审 |
 | `--timeout <秒>` | 控制 | 子进程超时（默认 300） |
 | `--help` | — | 显示完整使用说明 |
 
@@ -95,6 +95,10 @@ review-cc-cli/
 └── docs/                       # 设计文档
     ├── parallel-review-design.md
     └── best-practices-dev-workflow.md
+├── tests/                       # 测试 fixture
+│   └── fixtures/
+│       ├── fixture-bugs.js      # 植入 bug 文件
+│       └── README.md            # 验收标准
 ```
 
 ## Rubric 部署结构
