@@ -9,7 +9,7 @@
 - **Rubric 驱动** — 按路径自动匹配审查标准（8 个 rubric）
 - **模型选择** — `--opus`(默认) `--sonnet` `--haiku` 或 `--model <ID>`
 - **Loop 自动收敛** — `--loop` 多轮独立评审，3 轮无新发现自动停止
-- **并行评审** — `--parallel` 多 agent 按维度同时审查（设计中）
+- **并行评审** — `--parallel` 多 agent 按维度同时审查
 - **范围灵活** — 当前 diff、指定文件、目录、git 范围、scope 限定均可
 
 ## 安装
@@ -18,6 +18,17 @@
 npx skills add douxt/skills -g -a claude-code -y
 cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 ```
+
+`install.sh` 部署 settings-review.json + rubrics 到 `~/.claude/`。若目标已是 symlink（如三层部署模式），脚本自动跳过，加 `--force` 强制覆盖。
+
+### 更新
+
+```bash
+npx skills update review-cc-cli          # 更新 SKILL.md
+cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh   # 同步配置
+```
+
+`install.sh` 内置版本追踪（`.review-cc-cli-version`），同版本自动跳过。SKILL.md 与配置版本不一致时会提示。
 
 ## 使用
 
