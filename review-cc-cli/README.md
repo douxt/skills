@@ -1,83 +1,114 @@
 # review-cc-cli
 
-在当前对话中启动一个**独立上下文**的 `claude -p` 实例，只读评审代码/计划/测试。多轮评审复用同一 session 以降本。
+独立上下文的 `claude -p` 子进程代码/文档评审 skill。多轮复用同一 session 以降本。
 
 ## 核心特性
 
-- **独立子进程审查** — 子进程有独立的上下文，不受当前对话影响
+- **独立子进程审查** — 子进程独立上下文，不受当前对话影响
 - **多轮会话复用** — 第 2 轮起利用 prompt cache 大幅降本
-- **Rubric 驱动** — 按路径自动匹配审查标准（security/performance/plan 等）
-- **模型选择** — `--opus`(默认) `--sonnet` `--haiku` 或 `--model <ID>` 指定任意模型
-- **范围灵活** — 当前 diff、指定文件、目录、git 范围均可
+- **Rubric 驱动** — 按路径自动匹配审查标准（8 个 rubric）
+- **模型选择** — `--opus`(默认) `--sonnet` `--haiku` 或 `--model <ID>`
+- **Loop 自动收敛** — `--loop` 多轮独立评审，3 轮无新发现自动停止
+- **并行评审** — `--parallel` 多 agent 按维度同时审查（设计中）
+- **范围灵活** — 当前 diff、指定文件、目录、git 范围、scope 限定均可
 
 ## 安装
 
-### 方式一：npx skills（推荐）
-
 ```bash
 npx skills add douxt/skills -g -a claude-code -y
-./scripts/install.sh     # 部署配置文件 + rubrics
-```
-
-### 方式二：手动
-
-```bash
-git clone https://github.com/douxt/skills.git
-cp -r skills/review-cc-cli ~/.claude/skills/review-cc-cli
 cd ~/.claude/skills/review-cc-cli && bash scripts/install.sh
 ```
 
 ## 使用
 
 ```bash
-/review              # 审查未提交改动
-/review src/         # 审查指定目录
-/review --rubric security src/auth/   # 用安全标准审查
-/review --explore src/                # 探索式审查（深入读相关文件）
-/review HEAD~3       # 审查最近 3 个 commit
+/review-cc-cli                        # 审查未提交改动
+/review-cc-cli src/                   # 审查指定目录
+/review-cc-cli --rubric security src/auth/  # 用安全标准审查
+/review-cc-cli --explore src/         # 探索式审查（深入读相关文件）
+/review-cc-cli HEAD~3                 # 审查最近 3 个 commit
+/review-cc-cli --quick                # 快速模式，跳过主进程评估
+/review-cc-cli --loop docs/plan.md    # 循环评审直到收敛
+/review-cc-cli --parallel             # 并行 4 维评审（设计中）
+/review-cc-cli --rubric prd prd.md    # PRD 评审
+/review-cc-cli --scope "第一批" --with spec.md src/
+/review-cc-cli --help                 # 完整参数说明
 ```
+
+## 参数速查
+
+| 参数 | 分类 | 说明 |
+|------|------|------|
+| `<文件\|目录\|git范围>` | 范围 | 指定审查对象，默认未提交改动 |
+| `--opus` | 模型 | 最强模型（默认） |
+| `--sonnet` | 模型 | 平衡模型 |
+| `--haiku` | 模型 | 快速评审 |
+| `--model <ID>` | 模型 | 自定义模型 |
+| `--shallow` | 上下文 | 只看 diff，不读额外文件 |
+| `--explore` | 上下文 | 允许 grep/读相关文件 |
+| `--rubric <名称>` | 标准 | 指定评审标准（可多个，逗号分隔） |
+| `--scope <描述>` | 标准 | 限定评审范围，超出标记 deferred |
+| `--with <路径>` | 标准 | 绑定参考文档（可多次指定） |
+| `--quick` | 模式 | 跳过主进程评估，直接输出子进程结果 |
+| `--loop` | 模式 | 自动收敛循环，3 轮空转停止 |
+| `--loop-rounds <N>` | 模式 | 最大轮次（默认 10） |
+| `--loop-budget <tokens>` | 模式 | token 预算上限 |
+| `--parallel [维度]` | 模式 | 多 agent 并行分维评审（设计中） |
+| `--timeout <秒>` | 控制 | 子进程超时（默认 300） |
+| `--help` | — | 显示完整使用说明 |
+
+`--loop` 与 `--quick` 互斥。
+
+## Rubric 自动匹配
+
+| 路径特征 | 自动匹配 rubric |
+|----------|---------------|
+| `auth/`、`login`、`password`、`token` | default + security |
+| `test/`、`spec/`、`*.test.*` | default + testing |
+| `*.md`、`plan`、`方案`、`docs/` | default + plan |
+| `*.yml`、`*.yaml`、`Dockerfile` | default + config |
+| `benchmark`、`perf`、`慢查询` | default + performance |
+| PRD、需求文档 | default + prd |
+| 以上都不匹配 | default |
+
+显式 `--rubric` > 路径自动匹配 > default。
 
 ## 结构
 
 ```
 review-cc-cli/
-├── SKILL.md               # 技能指令
+├── SKILL.md                    # 技能定义
+├── README.md                   # 本文件
 ├── scripts/
-│   └── install.sh         # 部署配置 + rubrics
+│   └── install.sh              # 部署配置 + rubrics
 ├── config/
-│   └── settings-review.json  # 子进程权限配置
-└── rubrics/               # 审查标准
-    ├── default.md
-    ├── security.md
-    ├── performance.md
-    ├── plan.md
-    ├── config.md
-    └── testing.md
+│   └── settings-review.json    # 子进程权限配置
+├── rubrics/                    # 审查标准（8 个）
+│   ├── default.md              # 可维护性与风格
+│   ├── correctness.md          # 逻辑正确性与错误处理
+│   ├── security.md             # 安全漏洞
+│   ├── performance.md          # 性能问题
+│   ├── plan.md                 # 计划/方案评审
+│   ├── prd.md                  # PRD 需求文档评审
+│   ├── config.md               # 配置文件评审
+│   └── testing.md              # 测试质量评审
+└── docs/                       # 设计文档
+    ├── parallel-review-design.md
+    └── best-practices-dev-workflow.md
+```
+
+## Rubric 部署结构
+
+```
+skills/review-cc-cli/rubrics/   ← 唯一源码
+        │  install.sh
+        ▼
+claude-config/review-rubrics/   ← 个人配置仓库
+        │  symlink
+        ▼
+~/.claude/review-rubrics/       ← 运行时（全部 symlink）
 ```
 
 ## License
 
 MIT
-
-## 规划
-
-### 下一步
-
-- **`--fix` 模式** — 子进程审完同时对简单问题（格式/lint/风格）直接出 diff
-- **Review 预算控制** — `--budget <tokens>`，按 token 预算智能分配审查深度
-- **交互式 drill-down** — 自评估后可继续追问「这条展开看看」「这个 false positive 为什么」
-
-### 远期展望
-
-| 方向 | 思路 |
-|------|------|
-| 多视角并行评审 | 同时启动多个子进程（安全/性能/正确性各一路），合出综合报告 |
-| 多语言专属 rubric | 根据文件后缀自动加载对应标准（`.py`→Python、`.php`→PHP 5.6 等） |
-| 审查置信度标注 | 对每条发现给出 confidence（高/中/低），降低误报干扰 |
-| 增量审查 | 大 PR 按文件分批审，避免超长 context 稀释质量 |
-| 批量项目扫描 | 一次 review 跑遍多个关联仓库（前后端同时审） |
-| pre-commit hook | 提交前自动 `--shallow` 拦截低级问题 |
-| 自定义输出级别 | `--brief` 只给汇总，`--verbose` 给完整分析 |
-| 架构模式检查 | 对比项目已有代码风格，发现不一致 |
-| 团队 rubric 共享 | rubrics 独立仓，多 skill 共用 |
-| 审查结果导出 | markdown/HTML 格式，方便贴到 PR 或文档 |
