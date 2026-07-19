@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """session-review-dou 会话扫描器。jq 可选加速，无则回退 Python stdlib。"""
-import json, os, sys, glob, subprocess, datetime, urllib.parse
+import json, os, sys, glob, re, subprocess, datetime, urllib.parse
 
-SIGNALS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "signals.json")
+SKILL_DIR = os.path.dirname(os.path.dirname(__file__))
+SIGNALS_FILE = os.path.join(SKILL_DIR, "config", "signals.json")
+REVIEWS_DIR = os.path.join(SKILL_DIR, "reviews")
 LAST_RUN_FILE = "/tmp/session-review-last-run"
 
 def has_jq():
@@ -33,10 +35,6 @@ def get_since():
         with open(LAST_RUN_FILE) as f:
             return f.read().strip()
     return (datetime.datetime.now() - datetime.timedelta(days=30)).strftime("%Y-%m-%d")
-
-def update_last_run():
-    with open(LAST_RUN_FILE, "w") as f:
-        f.write(datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S"))
 
 def load_signals():
     with open(SIGNALS_FILE) as f:
@@ -70,6 +68,25 @@ def extract_text(content):
         )
     return ""
 
+def load_analyzed_sessions():
+    """从 reviews/ 归档中提取已分析的 session-id -> {id: date}。"""
+    analyzed = {}
+    if not os.path.isdir(REVIEWS_DIR):
+        return analyzed
+    for fname in sorted(os.listdir(REVIEWS_DIR)):
+        if not fname.endswith(".md") or fname.startswith("."):
+            continue
+        fpath = os.path.join(REVIEWS_DIR, fname)
+        date_str = fname.replace(".md", "")
+        try:
+            with open(fpath) as f:
+                for sid in re.findall(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", f.read()):
+                    if sid not in analyzed:
+                        analyzed[sid] = date_str
+        except Exception:
+            pass
+    return analyzed
+
 def summarize_session(filepath, signals):
     try:
         fname = os.path.basename(filepath)
@@ -77,7 +94,7 @@ def summarize_session(filepath, signals):
         size_kb = os.path.getsize(filepath) // 1024
         timestamp = ""
         user_msgs, assistant_summaries, all_markers = [], [], set()
-        line_count, total_text_len = 0, 0
+        line_count = 0
         with open(filepath) as f:
             for line in f:
                 line_count += 1
@@ -91,12 +108,10 @@ def summarize_session(filepath, signals):
                 text = extract_text(o.get("message", {}).get("content", ""))
                 if not text: continue
                 if t == "user":
-                    total_text_len += len(text)
                     m = detect_signals(text, signals)
                     all_markers.update(m)
                     user_msgs.append({"text": text[:200], "len": len(text), "markers": m})
                 elif t == "assistant":
-                    total_text_len += min(len(text), 500)
                     assistant_summaries.append(text[:150])
                     all_markers.update(detect_signals(text, signals))
         topic = user_msgs[0]["text"][:80] if user_msgs else "(无用户消息)"
@@ -116,6 +131,7 @@ def list_sessions():
         print(f"   CWD: {os.getcwd()}")
         return
     signals = load_signals()
+    analyzed = load_analyzed_sessions()
     since = get_since()
     jsonl_files = sorted(
         [f for f in glob.glob(os.path.join(project_dir, "*.jsonl"))
@@ -131,16 +147,20 @@ def list_sessions():
         print("  3) 设 CLAUDE_CONFIG_DIR 环境变量指向共享存储")
         return
     print(f"{len(jsonl_files)} 个会话 ({project_dir})")
-    print(f"增量：只展示 {since} 之后\n")
+    print(f"增量：只展示 {since} 之后")
+    if analyzed:
+        print(f"已分析：{len(analyzed)} 个 ✅\n")
+    else:
+        print()
     print(f"{'#':>3}  {'会话ID':<38} {'时间':<20} {'大小':>6} {'消息':>5}  主题")
     print("-" * 100)
     for i, fp in enumerate(jsonl_files):
         s = summarize_session(fp, signals)
         if "error" in s: continue
         if s["timestamp"] and s["timestamp"] < since: continue
-        print(f"{i+1:>3}  {s['session_id'][:36]:<38} {s['timestamp']:<20} {s['size_kb']:>5}K {s['user_msg_count']:>4}u  {s['topic'][:60]}")
-    # last-run 不在此更新——由 SKILL.md 阶段 1 确认用户选择后再更新
-    print("\n输入 /session-review-dou <编号> 选择会话，如 /session-review-dou 1 3")
+        sid = s["session_id"]
+        tag = f"✅ {analyzed[sid]}" if sid in analyzed else "（未分析）"
+        print(f"{i+1:>3}  {sid[:36]:<38} {s['timestamp']:<20} {s['size_kb']:>5}K {s['user_msg_count']:>4}u  {tag}  {s['topic'][:50]}")
 
 if __name__ == "__main__":
     if "--list" in sys.argv:
