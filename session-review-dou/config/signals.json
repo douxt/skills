@@ -1,0 +1,8 @@
+{
+  "_comment": "signals.json — 仅标可疑区域。深度诊断由 LLM 完成。",
+  "corrections_cn": ["不是", "不对", "错了", "重新", "别", "不要", "不对的", "不是这个"],
+  "corrections_en": ["no, don't", "that's wrong", "actually,", "instead of", "wait,", "that's not"],
+  "completion_claims": ["完成了", "已完成", "done", "completed", "ready", "finished"],
+  "repeated_instructions": {"threshold": 2, "window": "cross-session"},
+  "abandoned_session": {"pattern": "error|fail|错了", "followed_by": "session_end"}
+}
