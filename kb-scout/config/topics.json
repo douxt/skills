@@ -1,0 +1,14 @@
+{
+  "topics": [
+    {"name": "Claude Code 工作流", "queries": ["claude code goal loop tutorial", "claude code workflow automation 2026"], "max_per_query": 3},
+    {"name": "AI Agent 架构", "queries": ["claude code subagent pattern", "AI agent multi-agent orchestration"], "max_per_query": 2},
+    {"name": "Skill 工程", "queries": ["claude code skill design best practice", "agent skill engineering"], "max_per_query": 2},
+    {"name": "循环工程", "queries": ["loop engineering claude code", "AI agent autonomous loop workflow"], "max_per_query": 3},
+    {"name": "Token 优化", "queries": ["claude code token optimization 2026", "AI coding cost reduction"], "max_per_query": 2},
+    {"name": "知识库/RAG", "queries": ["karpathy LLM wiki knowledge base", "AI knowledge base RAG 2026"], "max_per_query": 2},
+    {"name": "Harness Engineering", "queries": ["agent harness engineering claude code", "claude code hooks skills MCP"], "max_per_query": 2},
+    {"name": "深度研究", "queries": ["STORM AI deep research", "AI research agent multi-perspective"], "max_per_query": 2}
+  ],
+  "max_age_days": 60,
+  "max_total_results": 20
+}
