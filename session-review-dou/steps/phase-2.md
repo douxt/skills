@@ -29,6 +29,21 @@
 | 上下文韧性 | ❌ | tool misuse | 子代理集体幻觉 |
 ```
 
+## 最佳实践对照
+
+读完诊断结果后，对照最佳实践知识库，为每个 💡/⚠️ 发现生成具体升级建议：
+
+| 检测模式 | 推荐实践 | 具体命令模板 |
+|---------|---------|------------|
+| 同一命令重复 ≥5 次 | 升级为 /goal | `/goal [任务] until [可量化的完成条件] stop after N` |
+| 定时手动检查 ≥3 次 | 升级为 /schedule | `/schedule every 1h: [命令]` |
+| 多步骤手动流程 ≥2 次 | 封装为 skill | 创建 SKILL.md，参考 session-review-dou 模板 |
+| 同一错误重复 ≥2 次 | 写入 lessons | `- [xN] Mistake: ... Correct: ... Why: ...` |
+| AI 猜错你的意图 | 加反向复述检查点 | "动代码前先用自己话写对关键字段的理解" |
+| 多会话重复任务 | 升级为 Routine | 管道 source + db pending 队列 |
+
+参考文档：`analysis/cross-cutting/goal-command-guide.md`（/goal 完整指南）、`rules/session-lessons.md`（跨项目教训）
+
 诊断完成后展示总览，用户确认后进入阶段 3。
 
 （阶段 2 结束。完成后加载 steps/phase-3.md）

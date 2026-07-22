@@ -29,19 +29,28 @@
 
 ## 输出建议列表
 
+每条建议附带具体命令/代码模板，用户可直接复制执行：
+
 ```
 ## 建议行动
 
-### P0 — 立即写入（已导致实质性返工）
-1. [CLAUDE.md] 开工前基线核查 …（来源：会话 A msg 45、会话 B msg 120、会话 C msg 33）
-2. [memory/] <标题> …（来源：3 个会话）
+### P0 — 立即执行（已导致实质性返工）
+1. [CLAUDE.md] 开工前基线核查
+   规则：方案中任何数量型事实，开工前亲自执行命令确认
+   来源：会话 A msg 45、会话 B msg 120
 
-### P1 — 本周写入（已造成体验下降）
-3. …
+### 💡 最佳实践升级（可直接执行）
+2. [/schedule] 流水线健康检查自动化
+   当前：每次手动 pgrep+curl+awk（会话 #3 中 ~25 次）
+   建议：`/schedule every 1h: pgrep -x python3 && curl -s :4416/ping`
+   参考：analysis/cross-cutting/goal-command-guide.md
 
-### 💡 升级机会
-4. 手动触发扫描 ×3 次 → 建议升级为 /goal（来源：会话 A/C/D）
-5. 重复流程可封装 skill → 确认后启动 skill-creator
+3. [/goal] 视频总结质量验证
+   当前：每次手动看 frontmatter 是否完整
+   建议：`/goal 检查 /data/docs/ 最近 3 天总结的 frontmatter 完整性 until 全部含 video_id+title+date stop after 3 turns`
+
+### 已固化（本次发现已有规则覆盖）
+4. ✅ 意图对齐 — 已写 lessons（AI 默认假设纠正）
 ```
 
 （阶段 3 结束。完成后加载 steps/phase-4.md）
